@@ -1,0 +1,12 @@
+/var/log/iperf3/*.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 {{ iperf_user }} {{ iperf_group }}
+    postrotate
+        systemctl reload iperf3 > /dev/null 2>&1 || true
+    endscript
+}

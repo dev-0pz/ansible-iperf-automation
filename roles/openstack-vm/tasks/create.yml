@@ -1,0 +1,79 @@
+---
+- name: Create security group
+  os_security_group:
+    auth: "{{ openstack_auth }}"
+    name: "{{ security_group_name }}"
+    description: "{{ security_group_description }}"
+    state: present
+  register: sg_result
+
+- name: Configure security group rules
+  os_security_group_rule:
+    auth: "{{ openstack_auth }}"
+    security_group: "{{ security_group_name }}"
+    protocol: "{{ item.protocol }}"
+    port_range_min: "{{ item.port_min | default(omit) }}"
+    port_range_max: "{{ item.port_max | default(omit) }}"
+    remote_ip_prefix: "{{ item.remote_ip | default('0.0.0.0/0') }}"
+    direction: "{{ item.direction | default('ingress') }}"
+    state: present
+  loop: "{{ security_group_rules }}"
+
+- name: Create server instances
+  os_server:
+    auth: "{{ openstack_auth }}"
+    name: "{{ item.name }}"
+    image: "{{ item.image | default(default_image) }}"
+    flavor: "{{ item.flavor | default(default_flavor) }}"
+    network: "{{ item.network | default(default_network) }}"
+    security_groups: "{{ item.security_groups | default([security_group_name]) }}"
+    key_name: "{{ item.key_name | default(default_key_name) }}"
+    auto_ip: false  # Never use floating IPs
+    wait: yes
+    timeout: "{{ vm_creation_timeout }}"
+    state: present
+    meta: "{{ item.metadata | default({}) }}"
+    userdata: "{{ item.userdata | default(omit) }}"
+  loop: "{{ vm_instances }}"
+  register: vm_results
+
+- name: Get updated server info
+  os_server_info:
+    auth: "{{ openstack_auth }}"
+    server: "{{ item.name }}"
+  loop: "{{ vm_instances }}"
+  register: updated_vm_info
+
+- name: Wait for SSH to be available on internal IPs
+  wait_for:
+    host: "{{ item.servers[0].private_v4 }}"
+    port: 22
+    delay: "{{ ssh_wait_delay }}"
+    timeout: "{{ ssh_wait_timeout }}"
+    search_regex: OpenSSH
+  loop: "{{ updated_vm_info.results }}"
+  when: 
+    - item.servers is defined
+    - item.servers | length > 0
+
+- name: Add hosts to inventory
+  add_host:
+    name: "{{ item.servers[0].name }}"
+    ansible_host: "{{ item.servers[0].private_v4 }}"
+    ansible_user: "{{ vm_user }}"
+    ansible_ssh_private_key_file: "{{ ansible_ssh_private_key_file }}"
+    groups: "{{ vm_instances[idx].groups | default([]) }}"
+    openstack_id: "{{ item.servers[0].id }}"
+    private_ip: "{{ item.servers[0].private_v4 }}"
+  loop: "{{ updated_vm_info.results }}"
+  loop_control:
+    index_var: idx
+  when: 
+    - item.servers is defined
+    - item.servers | length > 0
+
+- name: Save VM information
+  copy:
+    content: "{{ updated_vm_info | to_nice_json }}"
+    dest: "{{ vm_info_file }}"
+  delegate_to: localhost

@@ -1,0 +1,49 @@
+---
+- name: Cleanup OpenStack resources using role
+  hosts: localhost
+  gather_facts: no
+  vars:
+    openstack_auth:
+      auth_url: "{{ lookup('env', 'OS_AUTH_URL') }}"
+      username: "{{ lookup('env', 'OS_USERNAME') }}"
+      password: "{{ lookup('env', 'OS_PASSWORD') }}"
+      project_name: "{{ lookup('env', 'OS_PROJECT_NAME') }}"
+      project_domain_name: "{{ lookup('env', 'OS_PROJECT_DOMAIN_NAME') | default('Default') }}"
+      user_domain_name: "{{ lookup('env', 'OS_USER_DOMAIN_NAME') | default('Default') }}"
+  
+  tasks:
+    - name: Delete VMs
+      os_server:
+        auth: "{{ openstack_auth }}"
+        name: "{{ item }}"
+        state: absent
+        wait: yes
+        timeout: 180
+      loop:
+        - iperf-client
+        - iperf-server-1
+        - iperf-server-2
+        - grafana-server
+      ignore_errors: yes
+    
+    - name: Wait for VMs to be fully deleted
+      pause:
+        seconds: 30
+    
+    - name: Delete security group
+      os_security_group:
+        auth: "{{ openstack_auth }}"
+        name: iperf-sg
+        state: absent
+      ignore_errors: yes
+    
+    - name: Clean up files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/vm_info.json
+        - /tmp/iperf_raw_results.json
+        - /tmp/iperf_parsed_results.json
+        - /tmp/schema.sql
+      ignore_errors: yes

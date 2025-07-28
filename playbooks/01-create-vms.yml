@@ -1,0 +1,31 @@
+---
+- name: Create OpenStack VMs using role
+  hosts: localhost
+  gather_facts: no
+  vars_files:
+    - "{{ playbook_dir }}/../group_vars/all.yml"
+  
+  vars:
+    vm_instances:
+      - name: iperf-client
+        groups: 
+          - iperf_vms
+          - iperf_client
+        metadata:
+          role: client
+      - name: iperf-server-1
+        groups:
+          - iperf_vms
+          - iperf_servers
+        metadata:
+          role: server
+      - name: iperf-server-2
+        groups:
+          - iperf_vms
+          - iperf_servers
+        metadata:
+          role: server
+  
+  roles:
+    - role: openstack-vm
+      vm_state: present

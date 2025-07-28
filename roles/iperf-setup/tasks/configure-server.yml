@@ -1,0 +1,50 @@
+---
+- name: Create iPerf3 configuration directory
+  file:
+    path: /etc/iperf3
+    state: directory
+    mode: '0755'
+
+- name: Generate iPerf3 server configuration
+  template:
+    src: iperf3-server.conf.j2
+    dest: /etc/iperf3/server.conf
+    mode: '0644'
+  notify: restart iperf3
+
+- name: Create systemd service file
+  template:
+    src: iperf3.service.j2
+    dest: /etc/systemd/system/iperf3.service
+    mode: '0644'
+  notify: 
+    - reload systemd
+    - restart iperf3
+
+- name: Create log directory
+  file:
+    path: /var/log/iperf3
+    state: directory
+    owner: "{{ iperf_user }}"
+    group: "{{ iperf_group }}"
+    mode: '0755'
+
+- name: Configure logrotate
+  template:
+    src: iperf3.logrotate.j2
+    dest: /etc/logrotate.d/iperf3
+    mode: '0644'
+
+- name: Start and enable iPerf3 service
+  systemd:
+    name: iperf3
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: Open firewall port
+  ufw:
+    rule: allow
+    port: "{{ iperf_port }}"
+    proto: tcp
+  when: ansible_os_family == "Debian"

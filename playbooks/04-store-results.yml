@@ -1,0 +1,127 @@
+---
+- name: Store iPerf3 Results in Database
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    # Database configuration - update these with your values
+    db_host: localhost
+    db_name: iperf_results
+    db_user: iperf_user
+    db_password: "{{ vault_db_password | default('changeme') }}"
+    db_table: performance_results
+  
+  tasks:
+    - name: Update apt cache (with better error handling)
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      become: yes
+      ignore_errors: yes
+      register: apt_update
+
+    - name: Install MySQL Python module via apt
+      apt:
+        name: 
+          - python3-pymysql
+          - mysql-client
+        state: present
+      become: yes
+      when: apt_update is succeeded
+
+    - name: Alternative - Install pymysql with pip if apt fails
+      pip:
+        name: pymysql
+        extra_args: "--break-system-packages"
+      when: apt_update is failed
+
+    - name: Create database
+      mysql_db:
+        name: "{{ db_name }}"
+        state: present
+        login_host: "{{ db_host }}"
+        login_user: "{{ db_user }}"
+        login_password: "{{ db_password }}"
+
+    - name: Create schema file
+      copy:
+        content: |
+          CREATE TABLE IF NOT EXISTS {{ db_table }} (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            timestamp BIGINT NOT NULL,
+            client_host VARCHAR(255) NOT NULL,
+            server_host VARCHAR(255) NOT NULL,
+            duration FLOAT NOT NULL,
+            bytes_sent BIGINT NOT NULL,
+            bytes_received BIGINT NOT NULL,
+            bits_per_second_sent FLOAT NOT NULL,
+            bits_per_second_received FLOAT NOT NULL,
+            retransmits INT DEFAULT 0,
+            cpu_utilization_percent FLOAT DEFAULT 0,
+            parallel_streams INT DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_timestamp (timestamp),
+            INDEX idx_hosts (client_host, server_host)
+          );
+        dest: /tmp/schema.sql
+
+    - name: Create results table
+      mysql_db:
+        name: "{{ db_name }}"
+        state: import
+        target: /tmp/schema.sql
+        login_host: "{{ db_host }}"
+        login_user: "{{ db_user }}"
+        login_password: "{{ db_password }}"
+
+    - name: Check if results file exists
+      stat:
+        path: /tmp/iperf_parsed_results.json
+      register: results_file_stat
+
+    - name: Read parsed results
+      slurp:
+        src: /tmp/iperf_parsed_results.json
+      register: results_file
+      when: results_file_stat.stat.exists
+
+    - name: Display results to be inserted
+      debug:
+        msg: "Will insert {{ (results_file.content | b64decode | from_json) | length }} results into database"
+      when: results_file_stat.stat.exists
+
+    - name: Insert results into database
+      mysql_query:
+        login_host: "{{ db_host }}"
+        login_user: "{{ db_user }}"
+        login_password: "{{ db_password }}"
+        login_db: "{{ db_name }}"
+        query: |
+          INSERT INTO {{ db_table }} 
+          (timestamp, client_host, server_host, duration, bytes_sent, bytes_received, 
+           bits_per_second_sent, bits_per_second_received, retransmits, 
+           cpu_utilization_percent, parallel_streams)
+          VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        positional_args:
+          - "{{ item.timestamp }}"
+          - "{{ item.client_host }}"
+          - "{{ item.server_host }}"
+          - "{{ item.duration }}"
+          - "{{ item.bytes_sent }}"
+          - "{{ item.bytes_received }}"
+          - "{{ item.bits_per_second_sent }}"
+          - "{{ item.bits_per_second_received }}"
+          - "{{ item.retransmits }}"
+          - "{{ item.cpu_utilization_percent }}"
+          - "{{ item.parallel_streams }}"
+      loop: "{{ (results_file.content | b64decode | from_json) }}"
+      when: results_file_stat.stat.exists
+
+    - name: Clean up schema file
+      file:
+        path: /tmp/schema.sql
+        state: absent
+
+    - name: Display completion message
+      debug:
+        msg: "Results successfully stored in database {{ db_name }}.{{ db_table }}"
+      when: results_file_stat.stat.exists

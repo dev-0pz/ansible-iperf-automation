@@ -1,0 +1,30 @@
+---
+- name: Load VM information
+  slurp:
+    src: "{{ vm_info_file }}"
+  register: vm_info_data
+  failed_when: false
+
+- name: Delete server instances
+  os_server:
+    auth: "{{ openstack_auth }}"
+    name: "{{ item.server.name }}"
+    state: absent
+    wait: yes
+    timeout: "{{ vm_deletion_timeout }}"
+  loop: "{{ (vm_info_data.content | default('e30=') | b64decode | from_json).results | default([]) }}"
+  when: 
+    - vm_info_data is not failed
+    - item.server is defined
+
+- name: Delete security group
+  os_security_group:
+    auth: "{{ openstack_auth }}"
+    name: "{{ security_group_name }}"
+    state: absent
+  when: delete_security_group | default(true)
+
+- name: Clean up VM info file
+  file:
+    path: "{{ vm_info_file }}"
+    state: absent

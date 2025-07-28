@@ -1,0 +1,45 @@
+#!/bin/bash
+# iPerf3 test runner script
+
+set -e
+
+# Configuration
+RESULTS_DIR="/var/lib/iperf3/results"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+
+# Test parameters
+DURATION="{{ test_duration }}"
+INTERVAL="{{ test_interval }}"
+PARALLEL="{{ parallel_streams }}"
+PROTOCOL="{{ test_protocol }}"
+
+# Function to run test
+run_test() {
+    local server=$1
+    local output_file="${RESULTS_DIR}/test_${server}_${TIMESTAMP}.json"
+    
+    echo "Running test against ${server}..."
+    
+    iperf3 -c "${server}" \
+        -p {{ iperf_port }} \
+        -t "${DURATION}" \
+        -i "${INTERVAL}" \
+        -P "${PARALLEL}" \
+        {% if test_protocol == 'udp' %}-u{% endif %} \
+        -J > "${output_file}"
+    
+    echo "Test completed. Results saved to ${output_file}"
+    return 0
+}
+
+# Main execution
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <server1> [server2] [server3] ..."
+    exit 1
+fi
+
+for server in "$@"; do
+    run_test "${server}" || echo "Test failed for ${server}"
+done
+
+echo "All tests completed."

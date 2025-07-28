@@ -1,0 +1,40 @@
+---
+# Installation method
+compile_from_source: false
+force_reinstall: false
+iperf3_version: "3.16"
+iperf3_source_url: "https://downloads.es.net/pub/iperf/iperf-{{ iperf3_version }}.tar.gz"
+
+# Service configuration
+iperf_port: 5201
+iperf_bind_address: "0.0.0.0"
+iperf_user: nobody
+iperf_group: nogroup
+
+# Test parameters
+test_duration: 60
+test_interval: 10
+parallel_streams: 4
+test_protocol: tcp
+json_output: true
+
+# Package lists
+common_packages:
+  - python3-pip
+  - jq
+  - net-tools
+  - iftop
+  - htop
+
+python_packages:
+  - pymysql
+  - requests
+
+build_dependencies:
+  - build-essential
+  - libssl-dev
+  - libc6-dev
+  - pkg-config
+
+# Cache settings
+apt_cache_valid_time: 3600

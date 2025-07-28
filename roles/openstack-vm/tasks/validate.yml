@@ -1,0 +1,34 @@
+---
+- name: Debug openstack_auth variable
+  debug:
+    var: openstack_auth
+    
+- name: Check if openstack_auth is defined
+  fail:
+    msg: "openstack_auth variable is not defined. Make sure group_vars/all.yml is loaded"
+  when: openstack_auth is not defined
+
+- name: Check OpenStack credentials are set
+  fail:
+    msg: "OpenStack credential '{{ item.key }}' is not set. Current value: '{{ item.value }}'"
+  when: item.value is none or item.value == '' or item.value == 'None'
+  loop:
+    - { key: 'auth_url', value: "{{ openstack_auth.auth_url | default('') }}" }
+    - { key: 'username', value: "{{ openstack_auth.username | default('') }}" }
+    - { key: 'project_name', value: "{{ openstack_auth.project_name | default('') }}" }
+
+- name: Check password separately (without displaying value)
+  fail:
+    msg: "OpenStack password is not set"
+  when: openstack_auth.password is not defined or openstack_auth.password == '' or openstack_auth.password is none
+
+- name: Test OpenStack connection with server list
+  os_server_info:
+    auth: "{{ openstack_auth }}"
+  register: server_list
+  failed_when: false
+
+- name: Fail if OpenStack connection failed
+  fail:
+    msg: "Failed to connect to OpenStack: {{ server_list.msg | default('Unknown error') }}"
+  when: server_list is failed

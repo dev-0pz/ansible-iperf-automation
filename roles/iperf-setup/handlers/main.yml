@@ -1,0 +1,14 @@
+---
+- name: restart iperf3
+  systemd:
+    name: iperf3
+    state: restarted
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: restart iperf3 server
+  systemd:
+    name: iperf3-server
+    state: restarted

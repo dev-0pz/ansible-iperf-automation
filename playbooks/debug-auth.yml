@@ -1,0 +1,19 @@
+---
+- name: Debug OpenStack Auth
+  hosts: localhost
+  gather_facts: no
+  
+  tasks:
+    - name: Show openstack_auth contents
+      debug:
+        var: openstack_auth
+        
+    - name: Show each credential
+      debug:
+        msg: 
+          - "auth_url exists: {{ openstack_auth.auth_url is defined }}"
+          - "auth_url value: {{ openstack_auth.auth_url | default('NOT SET') }}"
+          - "username exists: {{ openstack_auth.username is defined }}"
+          - "username value: {{ openstack_auth.username | default('NOT SET') }}"
+          - "project_name exists: {{ openstack_auth.project_name is defined }}"
+          - "project_name value: {{ openstack_auth.project_name | default('NOT SET') }}"

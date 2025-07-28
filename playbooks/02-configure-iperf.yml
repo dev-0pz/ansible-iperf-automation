@@ -1,0 +1,99 @@
+---
+- name: Gather OpenStack VMs and configure iPerf3
+  hosts: localhost
+  gather_facts: no
+  vars:
+    openstack_auth:
+      auth_url: "{{ lookup('env', 'OS_AUTH_URL') }}"
+      username: "{{ lookup('env', 'OS_USERNAME') }}"
+      password: "{{ lookup('env', 'OS_PASSWORD') }}"
+      project_name: "{{ lookup('env', 'OS_PROJECT_NAME') }}"
+      project_domain_name: "{{ lookup('env', 'OS_PROJECT_DOMAIN_NAME') | default('Default') }}"
+      user_domain_name: "{{ lookup('env', 'OS_USER_DOMAIN_NAME') | default('Default') }}"
+  
+  tasks:
+    - name: Get VM IPs manually
+      os_server_info:
+        auth: "{{ openstack_auth }}"
+        server: "{{ item }}"
+      register: vm_info
+      loop:
+        - iperf-client
+        - iperf-server-1
+        - iperf-server-2
+    
+    - name: Display VM results with internal IPs
+      debug:
+        msg: "VM {{ item.item }} has internal IP {{ item.servers[0].addresses.Internal[0].addr }}"
+      loop: "{{ vm_info.results }}"
+      when: item.servers is defined and item.servers | length > 0
+    
+    - name: Add client to inventory
+      add_host:
+        name: iperf-client
+        ansible_host: "{{ vm_info.results[0].servers[0].addresses.Internal[0].addr }}"  # Use internal IP
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: ~/.ssh/ansible_iperf_key
+        groups: 
+          - iperf_vms
+          - iperf_client
+        iperf_role: client
+      when: vm_info.results[0].servers is defined
+    
+    - name: Add server-1 to inventory
+      add_host:
+        name: iperf-server-1
+        ansible_host: "{{ vm_info.results[1].servers[0].addresses.Internal[0].addr }}"  # Use internal IP
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: ~/.ssh/ansible_iperf_key
+        groups: 
+          - iperf_vms
+          - iperf_servers
+        iperf_role: server
+      when: vm_info.results[1].servers is defined
+    
+    - name: Add server-2 to inventory
+      add_host:
+        name: iperf-server-2
+        ansible_host: "{{ vm_info.results[2].servers[0].addresses.Internal[0].addr }}"  # Use internal IP
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: ~/.ssh/ansible_iperf_key
+        groups: 
+          - iperf_vms
+          - iperf_servers
+        iperf_role: server
+      when: vm_info.results[2].servers is defined
+
+- name: Bootstrap Python on VMs
+  hosts: iperf_vms
+  gather_facts: no
+  become: yes
+  
+  tasks:
+    - name: Wait for system to become reachable
+      wait_for_connection:
+        delay: 5
+        timeout: 60
+    
+    - name: Install Python if needed
+      raw: |
+        if ! command -v python3 &> /dev/null; then
+          apt-get update && apt-get install -y python3 python3-apt
+        fi
+      changed_when: false
+      register: python_install
+      retries: 3
+      delay: 10
+      until: python_install is succeeded
+    
+    - name: Gather facts after Python is available
+      setup:
+
+- name: Configure iPerf3 using roles  
+  hosts: iperf_vms
+  become: yes
+  gather_facts: yes
+  
+  roles:
+    - role: iperf-setup
+      tags: iperf

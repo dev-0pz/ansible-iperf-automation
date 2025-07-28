@@ -1,0 +1,23 @@
+[Unit]
+Description=iPerf3 Server
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ iperf_user }}
+Group={{ iperf_group }}
+ExecStart=/usr/bin/iperf3 -s -p {{ iperf_port }} -B {{ iperf_bind_address }} --logfile /var/log/iperf3/server.log
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

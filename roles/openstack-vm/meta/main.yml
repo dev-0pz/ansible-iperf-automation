@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  author: Your Name
+  description: OpenStack VM management role for iPerf3 testing
+  company: Your Company
+  license: MIT
+  min_ansible_version: 2.9
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+  galaxy_tags:
+    - openstack
+    - cloud
+    - vm
+
+dependencies: []

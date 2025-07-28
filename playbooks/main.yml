@@ -1,0 +1,8 @@
+---
+# This file only contains import_playbook statements - no hosts or tasks
+- import_playbook: 01-create-vms.yml
+- import_playbook: 02-configure-iperf.yml  
+- import_playbook: 03-run-tests.yml
+- import_playbook: 04-store-results.yml
+- import_playbook: 05-configure-grafana.yml
+- import_playbook: 06-cleanup.yml

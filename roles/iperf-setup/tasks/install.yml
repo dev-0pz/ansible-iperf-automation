@@ -1,0 +1,29 @@
+---
+- name: Check if iPerf3 is already installed
+  command: which iperf3
+  register: iperf3_check
+  changed_when: false
+  failed_when: false
+
+- name: Install iPerf3 from package manager
+  package:
+    name: iperf3
+    state: present
+  when: 
+    - iperf3_check.rc != 0
+    - not compile_from_source
+
+- name: Install iPerf3 from source
+  include_tasks: install-from-source.yml
+  when: 
+    - iperf3_check.rc != 0 or force_reinstall
+    - compile_from_source
+
+- name: Verify iPerf3 installation
+  command: iperf3 --version
+  register: iperf3_version
+  changed_when: false
+
+- name: Display iPerf3 version
+  debug:
+    msg: "iPerf3 version: {{ iperf3_version.stdout_lines[0] }}"

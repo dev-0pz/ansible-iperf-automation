@@ -1,0 +1,26 @@
+---
+- name: Create scripts directory
+  file:
+    path: /usr/local/bin/iperf-scripts
+    state: directory
+    mode: '0755'
+
+- name: Deploy test runner script
+  template:
+    src: run-iperf-test.sh.j2
+    dest: /usr/local/bin/iperf-scripts/run-test.sh
+    mode: '0755'
+
+- name: Deploy results parser script
+  template:
+    src: parse-results.py.j2
+    dest: /usr/local/bin/iperf-scripts/parse-results.py
+    mode: '0755'
+
+- name: Create results directory
+  file:
+    path: /var/lib/iperf3/results
+    state: directory
+    owner: "{{ iperf_user }}"
+    group: "{{ iperf_group }}"
+    mode: '0755'

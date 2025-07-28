@@ -1,0 +1,39 @@
+---
+- name: Install build dependencies
+  package:
+    name: "{{ build_dependencies }}"
+    state: present
+
+- name: Download iPerf3 source
+  get_url:
+    url: "{{ iperf3_source_url }}"
+    dest: /tmp/iperf-{{ iperf3_version }}.tar.gz
+    mode: '0644'
+
+- name: Extract source code
+  unarchive:
+    src: /tmp/iperf-{{ iperf3_version }}.tar.gz
+    dest: /tmp
+    remote_src: yes
+    creates: /tmp/iperf-{{ iperf3_version }}
+
+- name: Configure iPerf3 build
+  command: ./configure --prefix=/usr/local
+  args:
+    chdir: /tmp/iperf-{{ iperf3_version }}
+    creates: /tmp/iperf-{{ iperf3_version }}/Makefile
+
+- name: Compile iPerf3
+  make:
+    chdir: /tmp/iperf-{{ iperf3_version }}
+    jobs: "{{ ansible_processor_vcpus }}"
+
+- name: Install iPerf3
+  make:
+    chdir: /tmp/iperf-{{ iperf3_version }}
+    target: install
+  become: yes
+
+- name: Update library cache
+  command: ldconfig
+  become: yes

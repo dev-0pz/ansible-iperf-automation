@@ -1,0 +1,6 @@
+---
+# Debian/Ubuntu specific variables
+iperf_package_name: iperf3
+iperf_dependencies:
+  - python3
+  - python3-pip

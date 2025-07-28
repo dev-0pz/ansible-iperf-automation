@@ -1,0 +1,31 @@
+---
+- name: Debug Environment Variables
+  hosts: localhost
+  gather_facts: no
+  
+  tasks:
+    - name: Show environment variables using shell
+      shell: |
+        echo "OS_AUTH_URL: $OS_AUTH_URL"
+        echo "OS_USERNAME: $OS_USERNAME"
+        echo "OS_PROJECT_NAME: $OS_PROJECT_NAME"
+        echo "OS_USER_DOMAIN_NAME: $OS_USER_DOMAIN_NAME"
+        echo "OS_PROJECT_DOMAIN_NAME: $OS_PROJECT_DOMAIN_NAME"
+      register: env_vars
+      
+    - name: Display shell environment
+      debug:
+        var: env_vars.stdout_lines
+        
+    - name: Show Ansible lookup results
+      debug:
+        msg:
+          - "Lookup OS_AUTH_URL: {{ lookup('env', 'OS_AUTH_URL') }}"
+          - "Lookup OS_USERNAME: {{ lookup('env', 'OS_USERNAME') }}"
+          - "Lookup OS_PROJECT_NAME: {{ lookup('env', 'OS_PROJECT_NAME') }}"
+          
+    - name: Test alternative method
+      debug:
+        msg:
+          - "Ansible env OS_AUTH_URL: {{ ansible_env.OS_AUTH_URL | default('NOT SET') }}"
+          - "Ansible env OS_USERNAME: {{ ansible_env.OS_USERNAME | default('NOT SET') }}"

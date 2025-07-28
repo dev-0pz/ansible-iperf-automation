@@ -1,0 +1,50 @@
+---
+- name: Gather OpenStack VMs and configure iPerf3
+  hosts: localhost
+  gather_facts: no
+  vars:
+    openstack_auth:
+      auth_url: "{{ lookup('env', 'OS_AUTH_URL') }}"
+      username: "{{ lookup('env', 'OS_USERNAME') }}"
+      password: "{{ lookup('env', 'OS_PASSWORD') }}"
+      project_name: "{{ lookup('env', 'OS_PROJECT_NAME') }}"
+      project_domain_name: "{{ lookup('env', 'OS_PROJECT_DOMAIN_NAME') | default('Default') }}"
+      user_domain_name: "{{ lookup('env', 'OS_USER_DOMAIN_NAME') | default('Default') }}"
+  
+  tasks:
+    - name: Get VM IPs manually
+      os_server_info:
+        auth: "{{ openstack_auth }}"
+        server: "{{ item }}"
+      register: vm_info
+      loop:
+        - iperf-client
+        - iperf-server-1
+        - iperf-server-2
+    
+    - name: Debug vm_info structure
+      debug:
+        var: vm_info
+    
+    - name: Debug individual results
+      debug:
+        msg: |
+          Item: {{ item.item }}
+          Keys in result: {{ item.keys() | list }}
+      loop: "{{ vm_info.results }}"
+
+    # Once we know the structure, we'll update these tasks
+    - name: Try to find server info
+      debug:
+        msg: |
+          {% if 'openstack_servers' in item %}
+          Found openstack_servers for {{ item.item }}
+          Server info: {{ item.openstack_servers[0] | default('No servers') }}
+          {% elif 'servers' in item %}
+          Found servers for {{ item.item }}
+          Server info: {{ item.servers[0] | default('No servers') }}
+          {% else %}
+          No server key found for {{ item.item }}
+          Available keys: {{ item.keys() | list }}
+          {% endif %}
+      loop: "{{ vm_info.results }}"

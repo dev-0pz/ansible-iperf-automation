@@ -1,0 +1,145 @@
+---
+- name: Gather OpenStack VMs for testing
+  hosts: localhost
+  gather_facts: no
+  vars:
+    openstack_auth:
+      auth_url: "{{ lookup('env', 'OS_AUTH_URL') }}"
+      username: "{{ lookup('env', 'OS_USERNAME') }}"
+      password: "{{ lookup('env', 'OS_PASSWORD') }}"
+      project_name: "{{ lookup('env', 'OS_PROJECT_NAME') }}"
+      project_domain_name: "{{ lookup('env', 'OS_PROJECT_DOMAIN_NAME') | default('Default') }}"
+      user_domain_name: "{{ lookup('env', 'OS_USER_DOMAIN_NAME') | default('Default') }}"
+  
+  tasks:
+    - name: Get VM IPs manually
+      os_server_info:
+        auth: "{{ openstack_auth }}"
+        server: "{{ item }}"
+      register: vm_info
+      loop:
+        - iperf-client
+        - iperf-server-1
+        - iperf-server-2
+    
+    - name: Store server IPs for later use
+      set_fact:
+        server_1_ip: "{{ vm_info.results[1].servers[0].addresses.Internal[0].addr }}"
+        server_2_ip: "{{ vm_info.results[2].servers[0].addresses.Internal[0].addr }}"
+    
+    - name: Add client to inventory
+      add_host:
+        name: iperf-client
+        ansible_host: "{{ vm_info.results[0].servers[0].addresses.Internal[0].addr }}"
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: ~/.ssh/ansible_iperf_key
+        groups: 
+          - iperf_vms
+          - iperf_client
+        iperf_role: client
+        target_servers:
+          - "{{ server_1_ip }}"
+          - "{{ server_2_ip }}"
+      when: vm_info.results[0].servers is defined
+    
+    - name: Add server-1 to inventory
+      add_host:
+        name: iperf-server-1
+        ansible_host: "{{ server_1_ip }}"
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: ~/.ssh/ansible_iperf_key
+        ansible_default_ipv4:
+          address: "{{ server_1_ip }}"
+        groups: 
+          - iperf_vms
+          - iperf_servers
+        iperf_role: server
+      when: vm_info.results[1].servers is defined
+    
+    - name: Add server-2 to inventory
+      add_host:
+        name: iperf-server-2
+        ansible_host: "{{ server_2_ip }}"
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: ~/.ssh/ansible_iperf_key
+        ansible_default_ipv4:
+          address: "{{ server_2_ip }}"
+        groups: 
+          - iperf_vms
+          - iperf_servers
+        iperf_role: server
+      when: vm_info.results[2].servers is defined
+
+- name: Run iPerf3 Network Tests
+  hosts: iperf_client
+  gather_facts: yes
+  vars_files:
+    - "{{ playbook_dir }}/../roles/iperf-setup/defaults/main.yml"
+  
+  tasks:
+    - name: Get server IPs from inventory
+      set_fact:
+        server_ips: "{{ target_servers | default(groups['iperf_servers'] | map('extract', hostvars, 'ansible_default_ipv4') | map(attribute='address') | list) }}"
+
+    - name: Display test configuration
+      debug:
+        msg: |
+          Running iPerf3 tests:
+          - Servers: {{ server_ips | join(', ') }}
+          - Duration: {{ test_duration }}s
+          - Parallel streams: {{ parallel_streams }}
+          - Port: {{ iperf_port }}
+
+    - name: Run iPerf3 tests against each server
+      shell: |
+        iperf3 -c {{ item }} \
+          -p {{ iperf_port }} \
+          -t {{ test_duration }} \
+          -P {{ parallel_streams }} \
+          -i {{ test_interval }} \
+          -J
+      loop: "{{ server_ips }}"
+      register: iperf_results
+
+    - name: Save raw results
+      copy:
+        content: "{{ iperf_results | to_nice_json }}"
+        dest: "/tmp/iperf_raw_results.json"
+      delegate_to: localhost
+
+    - name: Parse and prepare results for database
+      set_fact:
+        parsed_results: |
+          {% set results = [] %}
+          {% for test in iperf_results.results %}
+          {% if test.stdout %}
+          {% set data = test.stdout | from_json %}
+          {% set _ = results.append({
+            'timestamp': ansible_date_time.epoch,
+            'client_host': inventory_hostname,
+            'server_host': test.item,
+            'duration': data.end.sum_sent.seconds,
+            'bytes_sent': data.end.sum_sent.bytes,
+            'bytes_received': data.end.sum_received.bytes,
+            'bits_per_second_sent': data.end.sum_sent.bits_per_second,
+            'bits_per_second_received': data.end.sum_received.bits_per_second,
+            'retransmits': data.end.sum_sent.retransmits | default(0),
+            'cpu_utilization_percent': data.end.cpu_utilization_percent.host_total | default(0),
+            'parallel_streams': parallel_streams
+          }) %}
+          {% endif %}
+          {% endfor %}
+          {{ results }}
+
+    - name: Save parsed results
+      copy:
+        content: "{{ parsed_results | to_nice_json }}"
+        dest: "/tmp/iperf_parsed_results.json"
+      delegate_to: localhost
+
+    - name: Display test summary
+      debug:
+        msg: |
+          Test completed! Results saved to:
+          - Raw: /tmp/iperf_raw_results.json
+          - Parsed: /tmp/iperf_parsed_results.json

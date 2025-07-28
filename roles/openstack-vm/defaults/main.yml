@@ -1,0 +1,39 @@
+---
+# VM Configuration
+default_image: ubuntu-noble-24.04-nogui
+default_flavor: l3.nano
+default_network: Internal
+default_key_name: "ansible-iperf-key"
+vm_user: ubuntu
+
+# Security Group
+security_group_name: iperf-sg
+security_group_description: "Security group for iPerf3 testing"
+delete_security_group: true
+
+# Default security rules
+security_group_rules:
+  - protocol: tcp
+    port_min: 22
+    port_max: 22
+    remote_ip: 0.0.0.0/0
+  - protocol: tcp
+    port_min: 5201
+    port_max: 5201
+    remote_ip: 0.0.0.0/0
+  - protocol: icmp
+    port_min: -1
+    port_max: -1
+    remote_ip: 0.0.0.0/0
+
+# Timeouts
+vm_creation_timeout: 1200
+vm_deletion_timeout: 180
+ssh_wait_delay: 10
+ssh_wait_timeout: 300
+
+# File paths
+vm_info_file: /tmp/vm_info.json
+
+# VM instances to create (override in playbook)
+vm_instances: []

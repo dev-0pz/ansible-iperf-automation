@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""
+iPerf3 Results Parser
+Parses JSON output from iPerf3 and formats for database insertion
+"""
+
+import json
+import sys
+import os
+from datetime import datetime
+
+def parse_iperf_results(json_file):
+    """Parse iPerf3 JSON results file"""
+    try:
+        with open(json_file, 'r') as f:
+            data = json.load(f)
+        
+        results = {
+            'timestamp': int(datetime.now().timestamp()),
+            'client_host': data['start']['connecting_to']['host'],
+            'server_host': data['start']['connected'][0]['remote_host'],
+            'duration': data['end']['sum_sent']['seconds'],
+            'bytes_sent': data['end']['sum_sent']['bytes'],
+            'bytes_received': data['end']['sum_received']['bytes'],
+            'bits_per_second_sent': data['end']['sum_sent']['bits_per_second'],
+            'bits_per_second_received': data['end']['sum_received']['bits_per_second'],
+            'retransmits': data['end']['sum_sent'].get('retransmits', 0),
+            'cpu_utilization_percent': data['end']['cpu_utilization_percent']['host_total'],
+            'parallel_streams': len(data['start']['connected'])
+        }
+        
+        return results
+    except Exception as e:
+        print(f"Error parsing results: {e}")
+        return None
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: parse-results.py <json_file>")
+        sys.exit(1)
+    
+    results = parse_iperf_results(sys.argv[1])
+    if results:
+        print(json.dumps(results, indent=2))

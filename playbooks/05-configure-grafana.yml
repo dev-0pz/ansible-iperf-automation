@@ -1,0 +1,47 @@
+---
+- name: Configure Grafana Dashboard
+  hosts: localhost
+  gather_facts: no
+  
+  tasks:
+    - name: Create Grafana datasource
+      uri:
+        url: "{{ grafana_url }}/api/datasources"
+        method: POST
+        user: "{{ grafana_user }}"
+        password: "{{ grafana_password }}"
+        force_basic_auth: yes
+        body_format: json
+        body:
+          name: "{{ grafana_datasource }}"
+          type: mysql
+          url: "{{ db_host }}:3306"
+          database: "{{ db_name }}"
+          user: "{{ db_user }}"
+          secureJsonData:
+            password: "{{ db_password }}"
+          jsonData:
+            sslmode: disable
+        status_code: [200, 409]
+
+    - name: Get datasource ID
+      uri:
+        url: "{{ grafana_url }}/api/datasources/name/{{ grafana_datasource }}"
+        method: GET
+        user: "{{ grafana_user }}"
+        password: "{{ grafana_password }}"
+        force_basic_auth: yes
+      register: datasource_info
+
+    - name: Create Grafana dashboard
+      uri:
+        url: "{{ grafana_url }}/api/dashboards/db"
+        method: POST
+        user: "{{ grafana_user }}"
+        password: "{{ grafana_password }}"
+        force_basic_auth: yes
+        body_format: json
+        body:
+          dashboard: "{{ lookup('template', 'grafana-dashboard.json.j2') | from_json }}"
+          overwrite: true
+        status_code: 200

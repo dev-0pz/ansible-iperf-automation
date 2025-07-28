@@ -1,0 +1,84 @@
+---
+- name: Create Grafana VM in OpenStack
+  hosts: localhost
+  gather_facts: no
+  vars:
+    openstack_auth:
+      auth_url: "{{ lookup('env', 'OS_AUTH_URL') }}"
+      username: "{{ lookup('env', 'OS_USERNAME') }}"
+      password: "{{ lookup('env', 'OS_PASSWORD') }}"
+      project_name: "{{ lookup('env', 'OS_PROJECT_NAME') }}"
+      project_domain_name: "{{ lookup('env', 'OS_PROJECT_DOMAIN_NAME') | default('Default') }}"
+      user_domain_name: "{{ lookup('env', 'OS_USER_DOMAIN_NAME') | default('Default') }}"
+    
+  tasks:
+    - name: Create Grafana VM
+      os_server:
+        auth: "{{ openstack_auth }}"
+        name: grafana-server
+        image: "{{ vm_image | default('ubuntu-noble-24.04-nogui') }}"
+        flavor: "{{ vm_flavor | default('l3.nano') }}"
+        network: "{{ vm_network | default('Internal') }}"
+        key_name: "{{ vm_key_name | default('ansible-iperf-key') }}"
+        security_groups:
+          - iperf-sg
+        auto_ip: false  # No floating IP
+        wait: yes
+        timeout: 600
+        state: present
+        meta:
+          role: monitoring
+      register: grafana_vm
+
+    - name: Add Grafana security group rules
+      os_security_group_rule:
+        auth: "{{ openstack_auth }}"
+        security_group: iperf-sg
+        protocol: tcp
+        port_range_min: "{{ item }}"
+        port_range_max: "{{ item }}"
+        remote_ip_prefix: 0.0.0.0/0
+      loop:
+        - 3000  # Grafana web UI
+        - 3306  # MySQL access
+      ignore_errors: yes
+
+    - name: Get Grafana VM info
+      os_server_info:
+        auth: "{{ openstack_auth }}"
+        server: grafana-server
+      register: grafana_info
+
+    - name: Get Ansible controller IP
+      setup:
+        gather_subset:
+          - network
+      delegate_to: localhost
+
+    - name: Add Grafana to inventory
+      add_host:
+        name: grafana-server
+        ansible_host: "{{ grafana_info.servers[0].addresses.Internal[0].addr }}"
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: ~/.ssh/ansible_iperf_key
+        groups: grafana
+        grafana_internal_ip: "{{ grafana_info.servers[0].addresses.Internal[0].addr }}"
+        mysql_host_ip: "{{ ansible_default_ipv4.address | default('localhost') }}"
+
+# ... rest of the playbook remains the same but update the final message:
+
+    - name: Display Grafana access info
+      debug:
+        msg: |
+          Grafana Installation Status:
+          {{ grafana_status.stdout }}
+          
+          Grafana VM created successfully!
+          Internal IP: {{ ansible_host }}
+          Grafana URL: http://{{ ansible_host }}:3000
+          Username: admin
+          Password: {{ grafana_admin_password }}
+          
+          To access from your workstation:
+          SSH tunnel: ssh -L 3000:{{ ansible_host }}:3000 ubuntu@<your-ansible-vm>
+          Then open: http://localhost:3000

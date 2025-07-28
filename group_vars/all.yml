@@ -1,0 +1,46 @@
+---
+# OpenStack Configuration
+openstack_auth:
+  auth_url: "{{ lookup('env', 'OS_AUTH_URL') }}"
+  username: "{{ lookup('env', 'OS_USERNAME') }}"
+  password: "{{ lookup('env', 'OS_PASSWORD') }}"
+  project_name: "{{ lookup('env', 'OS_PROJECT_NAME') }}"
+  project_domain_name: "{{ lookup('env', 'OS_PROJECT_DOMAIN_NAME') | default('Default') }}"
+  user_domain_name: "{{ lookup('env', 'OS_USER_DOMAIN_NAME') | default('Default') }}"
+
+# VM Configuration
+vm_image: ubuntu-noble-24.04-nogui
+vm_flavor: l3.nano
+vm_network: Internal
+vm_security_group: default
+vm_key_name: ansible-iperf-key
+vm_names:
+  - iperf-client
+  - iperf-server-1
+  - iperf-server-2
+
+# iPerf3 Configuration
+iperf_port: 5201
+iperf_duration: 60
+iperf_parallel: 4
+iperf_interval: 10
+
+# Database Configuration
+db_host: localhost
+db_name: network_metrics
+db_user: iperf_user
+db_password: "{{ vault_db_password }}"
+db_table: iperf_results
+
+# Grafana Configuration
+grafana_url: http://localhost:3000
+grafana_user: admin
+grafana_password: "{{ vault_grafana_password }}"
+grafana_datasource: NetworkMetrics
+grafana_dashboard_name: "iPerf3 Network Performance"
+
+# Floating IP Configuration
+floating_ips:
+  iperf-client: "130.246.81.117"     # Replace with floating IP
+  iperf-server-1: "130.246.81.249"   # Replace with floating IP
+  iperf-server-2: "130.246.81.160	"   # Replace with floating IP

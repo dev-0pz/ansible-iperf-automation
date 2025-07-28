@@ -1,0 +1,25 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: "{{ apt_cache_valid_time }}"
+  when: ansible_os_family == "Debian"
+
+- name: Install common packages
+  package:
+    name: "{{ common_packages }}"
+    state: present
+
+- name: Install Python packages via apt
+  apt:
+    name:
+      - python3-pymysql
+      - python3-requests
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install build dependencies
+  package:
+    name: "{{ build_dependencies }}"
+    state: present
+  when: compile_from_source

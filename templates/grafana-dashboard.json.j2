@@ -1,0 +1,68 @@
+{
+  "uid": "iperf3-network-performance",
+  "title": "{{ grafana_dashboard_name }}",
+  "tags": ["iperf3", "network", "performance"],
+  "timezone": "browser",
+  "schemaVersion": 16,
+  "version": 0,
+  "panels": [
+    {
+      "id": 1,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "type": "graph",
+      "title": "Throughput Over Time",
+      "datasource": "{{ grafana_datasource }}",
+      "targets": [
+        {
+          "rawSql": "SELECT UNIX_TIMESTAMP(created_at) as time, bits_per_second_sent/1000000 as 'Send Mbps', bits_per_second_received/1000000 as 'Receive Mbps', CONCAT(client_host, ' -> ', server_host) as metric FROM {{ db_table }} WHERE $__timeFilter(created_at) ORDER BY time",
+          "format": "time_series"
+        }
+      ],
+      "yaxes": [
+        {
+          "label": "Throughput (Mbps)",
+          "format": "Mbps"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "type": "graph",
+      "title": "Retransmissions",
+      "datasource": "{{ grafana_datasource }}",
+      "targets": [
+        {
+          "rawSql": "SELECT UNIX_TIMESTAMP(created_at) as time, retransmits, CONCAT(client_host, ' -> ', server_host) as metric FROM {{ db_table }} WHERE $__timeFilter(created_at) ORDER BY time",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "type": "table",
+      "title": "Latest Test Results",
+      "datasource": "{{ grafana_datasource }}",
+      "targets": [
+        {
+          "rawSql": "SELECT created_at as 'Time', client_host as 'Client', server_host as 'Server', ROUND(bits_per_second_sent/1000000, 2) as 'Send Mbps', ROUND(bits_per_second_received/1000000, 2) as 'Receive Mbps', retransmits as 'Retransmits' FROM {{ db_table }} ORDER BY created_at DESC LIMIT 10",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "type": "stat",
+      "title": "Average Performance",
+      "datasource": "{{ grafana_datasource }}",
+      "targets": [
+        {
+          "rawSql": "SELECT AVG(bits_per_second_sent)/1000000 as 'Avg Send Mbps', AVG(bits_per_second_received)/1000000 as 'Avg Receive Mbps' FROM {{ db_table }} WHERE created_at >= NOW() - INTERVAL 1 HOUR",
+          "format": "table"
+        }
+      ]
+    }
+  ]
+}

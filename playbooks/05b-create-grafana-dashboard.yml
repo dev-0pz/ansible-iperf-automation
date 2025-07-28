@@ -1,0 +1,465 @@
+---
+- name: Discover Grafana VM
+  hosts: localhost
+  gather_facts: no
+  vars:
+    openstack_auth:
+      auth_url: "{{ lookup('env', 'OS_AUTH_URL') }}"
+      username: "{{ lookup('env', 'OS_USERNAME') }}"
+      password: "{{ lookup('env', 'OS_PASSWORD') }}"
+      project_name: "{{ lookup('env', 'OS_PROJECT_NAME') }}"
+      project_domain_name: "{{ lookup('env', 'OS_PROJECT_DOMAIN_NAME') | default('Default') }}"
+      user_domain_name: "{{ lookup('env', 'OS_USER_DOMAIN_NAME') | default('Default') }}"
+  
+  tasks:
+    - name: Get Grafana VM info
+      os_server_info:
+        auth: "{{ openstack_auth }}"
+        server: grafana-server
+      register: grafana_info
+
+    - name: Add Grafana to inventory
+      add_host:
+        name: grafana-server
+        ansible_host: "{{ grafana_info.servers[0].addresses.Internal[0].addr }}"
+        ansible_user: ubuntu
+        ansible_ssh_private_key_file: ~/.ssh/ansible_iperf_key
+        groups: grafana
+
+- name: Create Grafana Dashboard for iPerf3
+  hosts: grafana
+  gather_facts: no
+  vars:
+    grafana_url: "http://{{ ansible_host }}:3000"
+    grafana_user: admin
+    grafana_password: "{{ vault_grafana_password | default('admin') }}"
+    
+  tasks:
+    - name: Wait for Grafana API
+      uri:
+        url: "{{ grafana_url }}/api/health"
+      register: result
+      until: result.status == 200
+      retries: 5
+      delay: 10
+
+    - name: List all datasources
+      uri:
+        url: "{{ grafana_url }}/api/datasources"
+        method: GET
+        user: "{{ grafana_user }}"
+        password: "{{ grafana_password }}"
+        force_basic_auth: yes
+      register: datasources_list
+
+    - name: Display available datasources
+      debug:
+        msg: "Available datasources: {{ datasources_list.json | map(attribute='name') | list }}"
+
+    - name: Create comprehensive iPerf3 Dashboard
+      uri:
+        url: "{{ grafana_url }}/api/dashboards/db"
+        method: POST
+        user: "{{ grafana_user }}"
+        password: "{{ grafana_password }}"
+        force_basic_auth: yes
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          dashboard:
+            uid: "iperf3-dashboard"
+            title: "iPerf3 Network Performance Analytics"
+            tags: ["iperf3", "network", "performance"]
+            style: "dark"
+            timezone: "browser"
+            editable: true
+            graphTooltip: 1
+            panels:
+              # Top row - Key metrics
+              - id: 1
+                title: "Current Throughput"
+                type: "gauge"
+                gridPos: { x: 0, y: 0, w: 6, h: 7 }
+                targets:
+                  - rawSql: |
+                      SELECT 
+                        bits_per_second_sent/1000000 as value
+                      FROM performance_results 
+                      ORDER BY timestamp DESC 
+                      LIMIT 1
+                    format: "table"
+                    refId: "A"
+                options:
+                  showThresholdLabels: false
+                  showThresholdMarkers: true
+                fieldConfig:
+                  defaults:
+                    unit: "Mbits"
+                    min: 0
+                    max: 1000
+                    thresholds:
+                      mode: "absolute"
+                      steps:
+                        - { color: "red", value: 0 }
+                        - { color: "yellow", value: 100 }
+                        - { color: "green", value: 500 }
+
+              - id: 2
+                title: "Average Latency"
+                type: "stat"
+                gridPos: { x: 6, y: 0, w: 4, h: 3 }
+                targets:
+                  - rawSql: |
+                      SELECT 
+                        AVG(duration)*1000 as value
+                      FROM performance_results 
+                      WHERE timestamp > UNIX_TIMESTAMP(NOW() - INTERVAL 1 HOUR)
+                    format: "table"
+                    refId: "A"
+                options:
+                  graphMode: "area"
+                  colorMode: "value"
+                fieldConfig:
+                  defaults:
+                    unit: "ms"
+                    thresholds:
+                      mode: "absolute"
+                      steps:
+                        - { color: "green", value: 0 }
+                        - { color: "yellow", value: 50 }
+                        - { color: "red", value: 100 }
+
+              - id: 3
+                title: "Packet Loss"
+                type: "stat"
+                gridPos: { x: 10, y: 0, w: 4, h: 3 }
+                targets:
+                  - rawSql: |
+                      SELECT 
+                        (SUM(retransmits)/COUNT(*)) as value
+                      FROM performance_results 
+                      WHERE timestamp > UNIX_TIMESTAMP(NOW() - INTERVAL 1 HOUR)
+                    format: "table"
+                    refId: "A"
+                options:
+                  graphMode: "area"
+                  colorMode: "value"
+                fieldConfig:
+                  defaults:
+                    unit: "percent"
+                    min: 0
+                    max: 100
+                    thresholds:
+                      mode: "absolute"
+                      steps:
+                        - { color: "green", value: 0 }
+                        - { color: "yellow", value: 1 }
+                        - { color: "red", value: 5 }
+
+              - id: 4
+                title: "Total Tests Run"
+                type: "stat"
+                gridPos: { x: 14, y: 0, w: 4, h: 3 }
+                targets:
+                  - rawSql: |
+                      SELECT COUNT(*) as value
+                      FROM performance_results
+                    format: "table"
+                    refId: "A"
+                options:
+                  graphMode: "none"
+                  colorMode: "background"
+                fieldConfig:
+                  defaults:
+                    unit: "short"
+                    thresholds:
+                      mode: "absolute"
+                      steps:
+                        - { color: "blue", value: 0 }
+
+              - id: 5
+                title: "Active Servers"
+                type: "stat"
+                gridPos: { x: 18, y: 0, w: 6, h: 3 }
+                targets:
+                  - rawSql: |
+                      SELECT COUNT(DISTINCT server_host) as value
+                      FROM performance_results
+                      WHERE timestamp > UNIX_TIMESTAMP(NOW() - INTERVAL 5 MINUTE)
+                    format: "table"
+                    refId: "A"
+                options:
+                  graphMode: "none"
+                  colorMode: "background"
+                fieldConfig:
+                  defaults:
+                    unit: "short"
+                    thresholds:
+                      mode: "absolute"
+                      steps:
+                        - { color: "dark-green", value: 0 }
+
+              # Network throughput time series
+              - id: 6
+                title: "Network Throughput Over Time"
+                type: "timeseries"
+                gridPos: { x: 0, y: 7, w: 12, h: 8 }
+                targets:
+                  - rawSql: |
+                      SELECT
+                        FROM_UNIXTIME(timestamp) as time,
+                        bits_per_second_sent/1000000 as 'TX (Mbps)',
+                        bits_per_second_received/1000000 as 'RX (Mbps)'
+                      FROM performance_results
+                      WHERE $__timeFilter(FROM_UNIXTIME(timestamp))
+                      ORDER BY timestamp
+                    format: "time_series"
+                    refId: "A"
+                fieldConfig:
+                  defaults:
+                    unit: "Mbits"
+                    custom:
+                      drawStyle: "line"
+                      lineInterpolation: "smooth"
+                      lineWidth: 2
+                      fillOpacity: 20
+                      gradientMode: "opacity"
+                      spanNulls: false
+                      showPoints: "never"
+                      stacking:
+                        mode: "none"
+                  overrides:
+                    - matcher: { id: "byName", options: "TX (Mbps)" }
+                      properties:
+                        - { id: "color", value: { mode: "fixed", fixedColor: "light-blue" } }
+                    - matcher: { id: "byName", options: "RX (Mbps)" }
+                      properties:
+                        - { id: "color", value: { mode: "fixed", fixedColor: "light-green" } }
+
+              # CPU utilization gauge
+              - id: 7
+                title: "CPU Utilization"
+                type: "gauge"
+                gridPos: { x: 12, y: 7, w: 6, h: 4 }
+                targets:
+                  - rawSql: |
+                      SELECT 
+                        AVG(cpu_utilization_percent) as value
+                      FROM performance_results
+                      WHERE timestamp > UNIX_TIMESTAMP(NOW() - INTERVAL 5 MINUTE)
+                    format: "table"
+                    refId: "A"
+                options:
+                  showThresholdLabels: false
+                  showThresholdMarkers: true
+                fieldConfig:
+                  defaults:
+                    unit: "percent"
+                    min: 0
+                    max: 100
+                    thresholds:
+                      mode: "percentage"
+                      steps:
+                        - { color: "green", value: 0 }
+                        - { color: "yellow", value: 70 }
+                        - { color: "red", value: 90 }
+
+              # Server comparison bar chart
+              - id: 8
+                title: "Performance by Server"
+                type: "barchart"
+                gridPos: { x: 18, y: 3, w: 6, h: 8 }
+                targets:
+                  - rawSql: |
+                      SELECT
+                        server_host as metric,
+                        AVG(bits_per_second_sent)/1000000 as 'Avg Send',
+                        AVG(bits_per_second_received)/1000000 as 'Avg Receive',
+                        MAX(bits_per_second_sent)/1000000 as 'Max Send',
+                        MAX(bits_per_second_received)/1000000 as 'Max Receive'
+                      FROM performance_results
+                      WHERE timestamp > UNIX_TIMESTAMP(NOW() - INTERVAL 1 HOUR)
+                      GROUP BY server_host
+                    format: "table"
+                    refId: "A"
+                options:
+                  showValue: "always"
+                  stacking: "none"
+                  groupWidth: 0.7
+                  barWidth: 0.97
+                  showLegend: true
+                  legendDisplayMode: "list"
+                  legendPlacement: "bottom"
+                fieldConfig:
+                  defaults:
+                    unit: "Mbits"
+                    color:
+                      mode: "palette-classic"
+
+              # Retransmissions over time
+              - id: 9
+                title: "Packet Retransmissions"
+                type: "timeseries"
+                gridPos: { x: 0, y: 15, w: 12, h: 6 }
+                targets:
+                  - rawSql: |
+                      SELECT
+                        FROM_UNIXTIME(timestamp) as time,
+                        server_host,
+                        retransmits
+                      FROM performance_results
+                      WHERE $__timeFilter(FROM_UNIXTIME(timestamp))
+                      ORDER BY timestamp
+                    format: "time_series"
+                    refId: "A"
+                fieldConfig:
+                  defaults:
+                    unit: "short"
+                    custom:
+                      drawStyle: "bars"
+                      lineWidth: 1
+                      fillOpacity: 50
+                      gradientMode: "hue"
+                      spanNulls: false
+                      showPoints: "never"
+                      stacking:
+                        mode: "normal"
+
+              # Test results heatmap
+              - id: 10
+                title: "Performance Heatmap"
+                type: "heatmap"
+                gridPos: { x: 12, y: 11, w: 12, h: 10 }
+                targets:
+                  - rawSql: |
+                      SELECT
+                        FROM_UNIXTIME(timestamp) as time,
+                        bits_per_second_sent/1000000 as value
+                      FROM performance_results
+                      WHERE $__timeFilter(FROM_UNIXTIME(timestamp))
+                      ORDER BY timestamp
+                    format: "time_series"
+                    refId: "A"
+                options:
+                  calculate: true
+                  calculation:
+                    xBuckets:
+                      mode: "count"
+                      value: "30"
+                    yBuckets:
+                      mode: "count"
+                  cellGap: 1
+                  color:
+                    scheme: "Spectral"
+                    mode: "spectrum"
+                  exemplars:
+                    color: "rgba(255,0,255,0.7)"
+                  filterValues:
+                    le: 1e-9
+                  showValue: "never"
+                  tooltip:
+                    show: true
+                    yHistogram: false
+                  yAxis:
+                    axisPlacement: "left"
+                    reverse: false
+                    unit: "Mbits"
+
+              # Recent tests table
+              - id: 11
+                title: "Recent Test Results"
+                type: "table"
+                gridPos: { x: 0, y: 21, w: 24, h: 6 }
+                targets:
+                  - rawSql: |
+                      SELECT
+                        FROM_UNIXTIME(timestamp) as 'Time',
+                        client_host as 'Client',
+                        server_host as 'Server',
+                        ROUND(bits_per_second_sent/1000000, 2) as 'Send (Mbps)',
+                        ROUND(bits_per_second_received/1000000, 2) as 'Receive (Mbps)',
+                        retransmits as 'Retransmits',
+                        ROUND(cpu_utilization_percent, 1) as 'CPU %',
+                        parallel_streams as 'Streams'
+                      FROM performance_results
+                      ORDER BY timestamp DESC
+                      LIMIT 20
+                    format: "table"
+                    refId: "A"
+                options:
+                  showHeader: true
+                  sortBy:
+                    - { displayName: "Time", desc: true }
+                fieldConfig:
+                  overrides:
+                    - matcher: { id: "byName", options: "Send (Mbps)" }
+                      properties:
+                        - { id: "custom.displayMode", value: "color-background" }
+                        - { id: "color", value: { mode: "continuous-GrYlRd" } }
+                    - matcher: { id: "byName", options: "Receive (Mbps)" }
+                      properties:
+                        - { id: "custom.displayMode", value: "color-background" }
+                        - { id: "color", value: { mode: "continuous-GrYlRd" } }
+
+            time:
+              from: "now-6h"
+              to: "now"
+            refresh: "5s"
+            schemaVersion: 27
+            version: 1
+          overwrite: true
+      register: dashboard_result
+
+    - name: Display Dashboard creation result
+      debug:
+        msg: |
+          Dashboard creation status: {{ dashboard_result.status }}
+          {% if dashboard_result.status == 200 %}
+          Dashboard ID: {{ dashboard_result.json.id | default('unknown') }}
+          Dashboard UID: {{ dashboard_result.json.uid | default('unknown') }}
+          {% endif %}
+
+    - name: Create simple dashboard if comprehensive fails
+      uri:
+        url: "{{ grafana_url }}/api/dashboards/db"
+        method: POST
+        user: "{{ grafana_user }}"
+        password: "{{ grafana_password }}"
+        force_basic_auth: yes
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          dashboard:
+            title: "iPerf3 Basic Dashboard"
+            panels:
+              - title: "Test Panel"
+                type: "text"
+                gridPos: { x: 0, y: 0, w: 12, h: 8 }
+                options:
+                  content: |
+                    # iPerf3 Dashboard
+                    
+                    Please configure your MySQL datasource and run iPerf3 tests to see data here.
+                    
+                    The datasource should connect to your MySQL database with the performance_results table.
+            time:
+              from: "now-6h"
+              to: "now"
+          overwrite: true
+      when: dashboard_result.status != 200
+
+    - name: Display Dashboard URL
+      debug:
+        msg: |
+          Dashboard created! Access it at:
+          {{ grafana_url }}
+          
+          Note: The datasource needs to be manually configured in Grafana:
+          1. Go to Configuration → Data Sources
+          2. Add MySQL datasource
+          3. Configure connection to your MySQL database
+          4. Test and Save
+          
+          Then the dashboard will show your iPerf3 test results!
