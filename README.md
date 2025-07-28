@@ -1,8 +1,31 @@
 # ansible-iperf-automation
+A comprehensive infrastructure automation project that deploys a complete network performance testing environment on OpenStack using Ansible, featuring real-time monitoring with Grafana and persistent metrics storage in MySQL.
+🎯 Project Overview
+This project automates the deployment and configuration of a network performance testing infrastructure on OpenStack. It creates multiple VMs, configures iPerf3 for network testing, stores results in MySQL, and visualizes performance metrics through Grafana dashboards.
 
-source ansible-iperf-automation/<rc.sh> file
+🛠️ Technology Stack
 
-hardcode the floating ips in, if you want to use floating ips
+Automation: Ansible 2.9+ with custom roles and playbooks
+Performance Testing: iPerf3 for network throughput testing
+Database: MySQL for metrics storage
+Monitoring: Grafana with custom JSON dashboards
+Security: SSL/TLS encryption, Ansible Vault for secrets
+Languages: Python, Ansible/YAML, Bash, SQL, JavaScript
+
+quick startup guide 
+
+git clone https://github.com/dev-0pz/ansible-iperf-automation.git
+
+cd ansible-iperf-automation
+
+source your-openstack-rc.sh
+
+cp group_vars/all.yml.example group_vars/all.yml
+# Edit all.yml with your environment details
+
+ansible-playbook playbooks/main.yml --ask-vault-pass
+
+(hardcode the floating ips in, if you want to use floating ips)
 
 ansible-playbook playbooks/01-create-vms.yml
 ansible-playbook playbooks/02-configure-iperf.yml
