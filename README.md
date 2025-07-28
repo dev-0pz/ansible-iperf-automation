@@ -28,16 +28,27 @@ ansible-playbook playbooks/main.yml --ask-vault-pass
 (hardcode the floating ips in, if you want to use floating ips)
 
 ansible-playbook playbooks/01-create-vms.yml
+
 ansible-playbook playbooks/02-configure-iperf.yml
+
 ansible-playbook playbooks/03-run-tests.yml
+
 ansible-playbook playbooks/04-store-results.yml
+
 sudo mysql
+
 CREATE USER 'iperf_user'@'localhost' IDENTIFIED BY 'changeme';
+
 GRANT ALL PRIVILEGES ON iperf_results.* TO 'iperf_user'@'localhost';
+
 FLUSH PRIVILEGES;
+
 EXIT;
+
 ansible-playbook playbooks/05a-create-grafana-vm.yml
+
 ssh -L 3000:<vm-ip>:3000 -i /home/User/.ssh/<key> ubuntu@<vm-ip>
+MAKE SURE YOU ARE USING THE SAME SECURITY GROUP WITH 3306 and 22 so the vms can communicate
 
 sudo snap install grafana
 sudo snap services grafana
