@@ -1,0 +1,68 @@
+---
+- name: Quick Generate Test Data for Grafana
+  hosts: localhost
+  gather_facts: no
+  vars:
+    number_of_tests: 10      # Run 10 tests
+    delay_between_tests: 30  # 30 seconds between tests
+    
+  tasks:
+    - name: Display start message
+      debug:
+        msg: |
+          Starting quick data generation...
+          Will run {{ number_of_tests }} tests with {{ delay_between_tests }}s intervals
+          Total time: ~{{ (number_of_tests * delay_between_tests) / 60 }} minutes
+
+    - name: Run multiple test cycles
+      shell: |
+        cd {{ playbook_dir }}
+        echo "Running test {{ item }}/{{ number_of_tests }}..."
+        
+        # Run the test
+        ansible-playbook 03-run-tests.yml
+        
+        # Store results
+        ansible-playbook 04-store-results.yml
+        
+        # Add a small random variation to make data more interesting
+        EXTRA_DELAY=$((RANDOM % 10))
+        
+        {% if item < number_of_tests %}
+        echo "Waiting {{ delay_between_tests }} seconds (+ ${EXTRA_DELAY}s variation)..."
+        sleep $(({{ delay_between_tests }} + ${EXTRA_DELAY}))
+        {% endif %}
+      loop: "{{ range(1, number_of_tests + 1) | list }}"
+      register: test_results
+
+    - name: Check generated data
+      mysql_query:
+        login_host: localhost
+        login_user: iperf_user
+        login_password: grafana_readonly_pass
+        login_db: iperf_results
+        query: |
+          SELECT 
+            COUNT(*) as total_records,
+            COUNT(DISTINCT DATE_FORMAT(FROM_UNIXTIME(timestamp), '%Y-%m-%d %H:%i')) as unique_minutes,
+            MIN(FROM_UNIXTIME(timestamp)) as first_test,
+            MAX(FROM_UNIXTIME(timestamp)) as last_test
+          FROM performance_results
+          WHERE timestamp > UNIX_TIMESTAMP(NOW() - INTERVAL 1 HOUR)
+      register: data_check
+
+    - name: Display results
+      debug:
+        msg: |
+          ========================================
+          Data Generation Complete!
+          ========================================
+          New records: {{ data_check.query_result[0][0].total_records }}
+          Time points: {{ data_check.query_result[0][0].unique_minutes }}
+          First test: {{ data_check.query_result[0][0].first_test }}
+          Last test: {{ data_check.query_result[0][0].last_test }}
+          
+          Now go to Grafana and:
+          1. Set time range to "Last 15 minutes" or "Last 30 minutes"
+          2. Your graphs should now show data!
+          ========================================
